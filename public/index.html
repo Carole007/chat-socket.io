@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在线聊天室</title>
+  <link rel="stylesheet" href="./index.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/element-ui/2.15.12/theme-chalk/index.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.7.14/vue.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/element-ui/2.15.12/index.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.0/socket.io.min.js"></script>
+
+</head>
+
+<body>
+  <div id="app">
+    <div id="box" v-if="uname">
+      <div class="wrap">
+        <div class="header">
+          在线聊天室 -by carole <br> <span>在线人数{{nums}}</span>
+        </div>
+        <div class="main">
+          <ul class="list" v-if="chatdata.length">
+            <li v-for="item in chatdata" :key="item.id" :class="[item.name === uname ? 'right' : 'left']">
+              <div class="pic" :style="{backgroundColor:item.color}">
+                {{item.name | upper}}</div>
+              <div class="txt" :style="{backgroundColor:item.color}">
+                <div class="triangle" :style="{borderLeftColor:item.color}" v-if="item.name == uname"></div>
+                <div class="triangle" :style="{borderRightColor:item.color}" v-else></div>
+                <div class="time">{{item.time}}</div>
+                {{item.message}}
+                <div class="nick">{{item.name}}</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div class="control">
+          <div class="pic">{{this.uname | upper}}
+          </div>
+          <input type="text" placeholder="说点什么吧..." v-model="val" @keyup.enter="sendMessage">
+          <button @click="sendMessage" >发 送</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <script>
+    window.onload = function () {
+      new Vue({
+        data() {
+          return {
+            val: '',
+            id: '',
+            dialogVisible: false,
+            uname: '',
+            nums: 0,
+            socket: null,
+            peoples: [],
+            chatdata: []
+          }
+        },
+        filters: {
+          upper(str) {
+            return str.length > 2 ? str.slice(0, 2).toUpperCase() : str.toUpperCase()
+          }
+        },
+        watch: {
+          uname(newval) {
+            this.socket = io(`ws://127.0.0.1:6767/`, {
+              query: {
+                name: newval
+              },
+              path: '/socket/'
+            })
+            this.socketHandler()
+          }
+        },
+        methods: {
+          randColor() {
+            return '#' + (Math.random().toString(16).slice(-6))
+          },
+          sendMessage() {
+            if (this.val == '') {
+              return this.$message.error('请输入消息再发送');
+            }
+            let data = {
+              id: this.id,
+              name: this.uname,
+              message: this.val,
+              color: this.randColor(),
+              time: new Date().toLocaleString(),
+            }
+            console.log(data);
+            this.chatdata.push(data)
+            this.val = ''
+            this.socket.emit('client message', data)
+          },
+          getName() {
+            this.$prompt('请输入您的昵称！', '提示', {
+              confirmButtonText: '登录',
+              cancelButtonText: '取消',
+              inputPattern: /.+/,
+              inputErrorMessage: '昵称不能为空哦'
+            }).then(({ value }) => {
+              if (this.peoples.includes(value)) {
+                this.$message.error('当前输入的用户已经存在了哦，请更换');
+                return this.getName()
+              }
+              this.uname = value
+              this.getHistory()
+            }).catch(() => {
+              this.$message({
+                type: 'error',
+                message: '不可以取消哦＞﹏＜'
+              });
+              this.getName()
+            });
+          },
+
+          getHistory() {
+            fetch('./data.json').then(res => res.json()).then(res => this.chatdata = res)
+          },
+          socketHandler() {
+            this.socket.on('nouse', (msg) => {
+              this.$message.error('当前输入的用户已经存在了哦，请更换');
+              this.getName()
+            })
+            this.socket.on('newuser join', (msg, id) => {
+              // console.log(msg);
+              this.id = id
+              this.peoples = msg
+              this.nums = msg.length
+              this.$message({
+                type: 'success',
+                message: msg[msg.length - 1] + ': 进入了聊天室！ '
+              });
+            })
+            this.socket.on('server message', (msg) => {
+              this.chatdata.push(msg)
+              this.$notify({
+                title: '收到一条新消息',
+                message: `${msg.name}:${msg.message}`,
+                duration: 3000,
+                position: 'top-left',
+              });
+            }),
+              this.socket.on('quit', (msg) => {
+                this.peoples.splice(this.chatdata.indexOf(msg), 1)
+                this.nums--;
+                this.$message.info(`${msg}离开了聊天室`);
+              })
+          }
+        },
+        mounted() {
+          this.getName()
+        }
+      }).$mount('#app')
+    }
+  </script>
+</body>
+
+</html>
